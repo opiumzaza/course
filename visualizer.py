@@ -113,11 +113,11 @@ def filter_graph_for_viz(
     if len(ordered) <= max_nodes:
         keep = set(ordered)
     else:
-        keep = set(ordered[:max_nodes])
+        keep = bot_nodes | set(ordered[:max_nodes])
         LOGGER.warning(
             "Dashboard capped at %s of %s nodes for browser performance "
             "(all bot-related nodes are kept; raise VIZ_MAX_NODES in config.py to show more).",
-            max_nodes,
+            len(keep),
             len(ordered),
         )
 
