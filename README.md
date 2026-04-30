@@ -72,13 +72,24 @@ Expected output includes progress lines such as:
 
 ## Output files
 
-| Filename | Location | Description |
-| --- | --- | --- |
-| `raw_comments.csv` | `data/` | Raw collected comments with user, post, reply, channel, and timestamp fields. |
-| `features.csv` | `data/` | Seven-feature per-user matrix used by the ML engine. |
-| `graph.graphml` | `data/` | Weighted co-activity graph where users are connected by near-simultaneous same-post commenting. |
-| `ml_results.csv` | `data/` | User anomaly scores, bot labels, and bot-farm cluster IDs. |
-| `botfarm_graph.html` | `output/` | Interactive PyVis dashboard for visual inspection of suspected bot farms. |
+| Filename | Location | Format | How to open / inspect |
+| --- | --- | --- | --- |
+| `raw_comments.csv` | `data/` | CSV | Open in Excel / Numbers / VS Code, or `pandas.read_csv` in Python. One row per comment, with `user_id`, `message_text`, UTC `timestamp`, `post_id`, `reply_to_msg_id`, `channel`, `post_timestamp`. |
+| `features.csv` | `data/` | CSV | Same as above. One row per user, columns are the seven engineered features (reaction-speed mean/std, comments per day, duplicate ratio, graph degree, clustering coefficient, unique channels). |
+| `graph.graphml` | `data/` | XML graph | Not human-readable in a text editor. Open in [Gephi](https://gephi.org), [Cytoscape](https://cytoscape.org), or load programmatically with `networkx.read_graphml(path)`. |
+| `ml_results.csv` | `data/` | CSV | One row per user: `user_id`, `anomaly_score`, `is_bot` (1 = bot candidate, 0 = normal), `cluster_id` (-1 = unclustered). Sort by `anomaly_score` ascending to find the most suspicious accounts. |
+| `botfarm_graph.html` | `output/` | Standalone HTML | Open in any browser (`open output/botfarm_graph.html` on macOS, `start output\botfarm_graph.html` on Windows). |
+| `clusters/cluster_<id>.html` | `output/clusters/` | Standalone HTML | One drill-down dashboard per detected bot farm. Same legend and styling as the main dashboard but scoped to a single cluster plus its direct neighbours — much faster to render and easier to read than the full graph. |
+
+### Dashboard performance tuning
+
+The main dashboard prioritises bot-related nodes and applies two filters to keep the browser responsive on large datasets:
+
+- Edges with weight below `VIZ_MIN_EDGE_WEIGHT` (default `2`) are dropped — single co-occurrences are mostly noise.
+- The total node count is capped at `VIZ_MAX_NODES` (default `1500`). All clustered bots and unclustered bot candidates are kept first; their direct neighbours come next; remaining normal users fill the rest.
+- Physics is run for `VIZ_STABILIZATION_ITERATIONS` (default `200`) iterations and then frozen, so the browser stops simulating once the layout settles.
+
+Raise these values in `config.py` if you want a denser dashboard. Lower them if your machine still struggles.
 
 ## How it works
 
@@ -93,3 +104,11 @@ Expected output includes progress lines such as:
 ## Interpreting results
 
 Open `output/botfarm_graph.html` in a browser after running the pipeline. Grey nodes are users classified as normal, orange nodes are isolated bot candidates, and red nodes are anomalous users assigned to a cluster. Red clusters indicate groups of accounts that share suspicious timing, content, and co-activity patterns; they should be treated as investigation leads rather than automatic proof of malicious automation.
+
+For focused investigation, open the per-cluster files in `output/clusters/`. Each `cluster_<id>.html` contains only that farm's members plus their direct co-activity neighbours, so the topology of a single coordination group is much easier to read than the global view.
+
+To dig into the underlying data without a browser:
+
+- `data/ml_results.csv` — sort by `anomaly_score` ascending in your spreadsheet of choice; the lowest scores are the most anomalous users.
+- `data/features.csv` — inspect raw per-user feature values to understand *why* a user was flagged (e.g. unusually low `reaction_speed_mean`, high `duplicate_ratio`).
+- `data/raw_comments.csv` — filter on a suspect `user_id` to see every comment that account posted during the collection window.

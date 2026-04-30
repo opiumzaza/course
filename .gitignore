@@ -3,5 +3,6 @@ __pycache__/
 .env
 data/
 output/
+lib/
 telegram_session*
 venv/
