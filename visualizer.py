@@ -148,6 +148,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     """Run dashboard rendering from the command line."""
     build_parser().parse_args()
+    config.configure_logging()
+    config.confirm_overwrite_runtime_outputs()
     output_path = render_dashboard()
     print(f"Module D output saved → {output_path}")
 
