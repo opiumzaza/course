@@ -59,17 +59,28 @@ def cluster_bot_candidates(bot_features: np.ndarray) -> np.ndarray:
     n_candidates = bot_features.shape[0]
     if n_candidates == 0:
         return np.array([], dtype=int)
-    if n_candidates < 3:
-        LOGGER.warning("Fewer than 3 bot candidates; saving without cluster assignments.")
-        return np.full(n_candidates, NO_CLUSTER_ID, dtype=int)
 
-    dbscan_labels = DBSCAN(eps=0.5, min_samples=3).fit_predict(bot_features)
-    if count_non_noise_clusters(dbscan_labels) >= 2:
-        return dbscan_labels.astype(int)
+    if n_candidates >= 3:
+        dbscan_labels = DBSCAN(eps=0.5, min_samples=3).fit_predict(bot_features)
+        if count_non_noise_clusters(dbscan_labels) >= 2:
+            return dbscan_labels.astype(int)
+        LOGGER.info(
+            "DBSCAN found fewer than 2 clusters on %s candidates; falling back to KMeans.",
+            n_candidates,
+        )
+    else:
+        LOGGER.info(
+            "Only %s bot candidate(s); skipping DBSCAN and using KMeans fallback.",
+            n_candidates,
+        )
 
     n_clusters = min(5, n_candidates)
     try:
-        return KMeans(n_clusters=n_clusters, random_state=42, n_init="auto").fit_predict(bot_features).astype(int)
+        return (
+            KMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
+            .fit_predict(bot_features)
+            .astype(int)
+        )
     except ValueError as exc:
         LOGGER.warning("KMeans fallback failed: %s. Saving results without cluster_id.", exc)
         return np.full(n_candidates, NO_CLUSTER_ID, dtype=int)
@@ -123,6 +134,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     """Run ML detection from the command line."""
     build_parser().parse_args()
+    config.configure_logging()
+    config.confirm_overwrite_runtime_outputs()
     output_path, _ = detect_bot_farms()
     print(f"Module C output saved → {output_path}")
 

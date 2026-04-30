@@ -157,6 +157,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     """Run feature engineering from the command line."""
     build_parser().parse_args()
+    config.configure_logging()
+    config.confirm_overwrite_runtime_outputs()
     features_path, graph_path = build_features()
     print(f"Module B outputs saved → {features_path}, {graph_path}")
 

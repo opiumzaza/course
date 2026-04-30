@@ -223,6 +223,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     """Run Telegram collection from the command line."""
     args = build_parser().parse_args()
+    config.configure_logging()
+    config.confirm_overwrite_runtime_outputs()
     output_path = asyncio.run(collect_all(limit=args.limit, channels=args.channels))
     print(f"Module A output saved → {output_path}")
 
