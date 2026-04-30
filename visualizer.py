@@ -221,6 +221,9 @@ def render_cluster_dashboards(
     output_dir: Path = config.CLUSTERS_DIR,
 ) -> list[Path]:
     """Render one drill-down HTML per bot-farm cluster."""
+    if output_dir.exists():
+        for old_file in output_dir.glob("cluster_*.html"):
+            old_file.unlink()
     output_dir.mkdir(parents=True, exist_ok=True)
     cluster_paths: list[Path] = []
     bot_results = results[(results["is_bot"] == 1) & (results["cluster_id"] != NO_CLUSTER_ID)]
