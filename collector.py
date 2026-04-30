@@ -52,8 +52,19 @@ def bounded_limit(limit: int) -> int:
     return limit
 
 
-async def retry_telegram_call(operation: Callable[[], Awaitable[T]], label: str) -> T | None:
-    """Run a Telegram API operation with retry and rate-limit handling."""
+async def retry_telegram_call(
+    operation: Callable[[], Awaitable[T]],
+    label: str,
+    skip_exceptions: tuple[type[BaseException], ...] = (),
+) -> T | None:
+    """Run a Telegram API operation with retry and rate-limit handling.
+
+    `skip_exceptions` lets a specific call site declare exception types that
+    are expected, permanent, and must not be retried (e.g. comment fetching
+    against posts with no discussion thread). They are logged at DEBUG and
+    the call returns None. All other exceptions retain the existing retry
+    and ERROR-level logging behaviour.
+    """
     delay = config.RATE_LIMIT_BASE_DELAY_SECONDS
     for attempt in range(1, config.TELEGRAM_REQUEST_RETRIES + 1):
         try:
@@ -64,8 +75,12 @@ async def retry_telegram_call(operation: Callable[[], Awaitable[T]], label: str)
             if not ask_continue_after_flood_wait(label, exc.seconds):
                 LOGGER.warning("User chose to stop after Telegram flood wait during %s.", label)
                 return None
-        except (PeerIdInvalidError, MsgIdInvalidError) as exc:
-            LOGGER.debug("No comment thread for %s (%s); skipping.", label, exc.__class__.__name__)
+        except skip_exceptions as exc:
+            LOGGER.debug(
+                "Skipping %s due to expected %s.",
+                label,
+                exc.__class__.__name__,
+            )
             return None
         except (OSError, ConnectionError, TimeoutError, RPCError) as exc:
             if attempt == config.TELEGRAM_REQUEST_RETRIES:
@@ -174,7 +189,11 @@ async def collect_comments_for_post(
             if isinstance(comment, Message)
         ]
 
-    comments = await retry_telegram_call(list_comments, f"comments for @{channel}/{post.id}")
+    comments = await retry_telegram_call(
+        list_comments,
+        f"comments for @{channel}/{post.id}",
+        skip_exceptions=(PeerIdInvalidError, MsgIdInvalidError),
+    )
     if comments is None:
         return records
 
