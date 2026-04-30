@@ -12,7 +12,7 @@ from typing import TypeVar
 
 import pandas as pd
 from telethon import TelegramClient
-from telethon.errors import FloodWaitError, RPCError
+from telethon.errors import FloodWaitError, MsgIdInvalidError, PeerIdInvalidError, RPCError
 from telethon.tl.custom.message import Message
 
 import config
@@ -64,6 +64,9 @@ async def retry_telegram_call(operation: Callable[[], Awaitable[T]], label: str)
             if not ask_continue_after_flood_wait(label, exc.seconds):
                 LOGGER.warning("User chose to stop after Telegram flood wait during %s.", label)
                 return None
+        except (PeerIdInvalidError, MsgIdInvalidError) as exc:
+            LOGGER.debug("No comment thread for %s (%s); skipping.", label, exc.__class__.__name__)
+            return None
         except (OSError, ConnectionError, TimeoutError, RPCError) as exc:
             if attempt == config.TELEGRAM_REQUEST_RETRIES:
                 LOGGER.error("Telegram operation failed after %s attempts: %s", attempt, label)
@@ -111,11 +114,15 @@ async def collect_comments_for_channel(
         return records
 
     post_count = 0
+    posts_with_comments = 0
     try:
         async for post in client.iter_messages(channel_entity, limit=limit):
             if not isinstance(post, Message) or post.id is None:
                 continue
             post_count += 1
+            if not post_has_comment_thread(post):
+                continue
+            posts_with_comments += 1
             comments = await collect_comments_for_post(client, channel_entity, channel, post)
             records.extend(comments)
     except FloodWaitError as exc:
@@ -125,8 +132,25 @@ async def collect_comments_for_channel(
     except (OSError, ConnectionError, TimeoutError, RPCError) as exc:
         LOGGER.error("Could not list posts for %s after %s posts: %s", channel, post_count, exc)
 
+    if post_count > 0 and posts_with_comments == 0:
+        LOGGER.warning(
+            "@%s exposed %s posts but none had a reachable comment thread. "
+            "The channel likely has comments disabled or no linked discussion group.",
+            channel,
+            post_count,
+        )
     print(f"[A] Collected {len(records)} comments from {channel}")
     return records
+
+
+def post_has_comment_thread(post: Message) -> bool:
+    """Return whether a channel post advertises a reachable comment thread."""
+    replies = getattr(post, "replies", None)
+    if replies is None:
+        return False
+    if not getattr(replies, "comments", False):
+        return False
+    return int(getattr(replies, "replies", 0) or 0) > 0
 
 
 async def collect_comments_for_post(
@@ -138,6 +162,9 @@ async def collect_comments_for_post(
     """Collect comments attached to a single Telegram channel post."""
     records: list[dict[str, object]] = []
     post_timestamp = to_utc_iso(post.date)
+
+    if not post_has_comment_thread(post):
+        return records
 
     async def list_comments() -> list[Message]:
         """Fetch all available comments for one post."""
